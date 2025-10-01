@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Tic-Tac-Toe</title>
+</head>
+<body>
+	
+  <h1>Welcome to Tic-Tac-Toe</h1>
+	
+  <fieldset>
+	<legend>Games Management</legend>
+ 	<button id="createB">New Game</button>
+  	<p id="createGameStatus"></p>
+  </fieldset>
+  <br>
+  <fieldset>
+  	<legend>User Management</legend>
+  	<label for="userName">User name:</label>
+  	<input type="text" id="userName" name="userName" value="my-player" required />
+  	<button id="registerB">Register</button>
+  	<p id="registerUserStatus"></p>
+  </fieldset>
+  <br>
+  <fieldset>
+  	<legend>Playing Game</legend>
+	<label for="userId">User id:</label>
+	<input type="text" id="userId" name="userId" value="user-1" required />
+	<label for="gameId">Game id:</label>
+	<input type="text" id="gameId" name="gameId" value="game-1" required />
+	<label for="symbol">Symbol:</label>
+	<input type="text" id="symbol" name="symbol" value="cross" required />
+	<button id="joinB">Join</button>  
+	<p id="joinStatus"></p>
+  </fieldset>
+  <br>
+  <fieldset>
+	<label for="x">x:</label>
+	<input type="number" id="x" name="x" min="0" max="2" value="0" />
+	<label for="y">y:</label>
+	<input type="number" id="y" name="y" min="0" max="2" value="0" />
+	<button id="moveB">Move</button>
+	<p id="moveStatus"></p>
+	<label for="events">Game state</label>
+	<br>
+	<textarea id="events" name="events" rows="10" cols="80">
+	</textarea>
+  </fieldset>
+
+      
+  <script>
+	
+	document.getElementById('createB').addEventListener('click', createGame);
+	document.getElementById('registerB').addEventListener('click', registerUser);
+	document.getElementById('joinB').addEventListener('click', joinGame);
+	document.getElementById('moveB').addEventListener('click', playGame);
+	
+	async function createGame() {
+	  const status = document.getElementById('createGameStatus');
+	  try {
+	    const response = await fetch('/api/createGame', {
+	      method: 'POST',
+	    });
+
+	    if (response.ok) {
+		  const gameInfo = await response.json();
+		  console.log(gameInfo);
+		  status.textContent = 'Game created - game ID: ' + gameInfo.gameId;
+
+	    } else {
+	      const err = await response.text();
+	      status.textContent = `Game creation failed failed: ${err}`;
+	    }
+	  } catch (error) {
+	    status.textContent = `Network error: ${error}`;
+	  }
+	}
+
+	async function registerUser() {
+	  const userName = document.getElementById('userName').value.trim();
+	  const status = document.getElementById('registerUserStatus');
+	  try {
+	    const response = await fetch('/api/registerUser', {
+	      method: 'POST',
+	      headers: {
+	        'Content-Type': 'application/json'
+	      },
+	      body: JSON.stringify({ userName })
+	    });
+
+	    if (response.ok) {
+		  const userInfo = await response.json();
+		  status.textContent = 'User registered successfully - user ID: ' + userInfo.userId;
+
+	    } else {
+	      const err = await response.text();
+	      status.textContent = `Registration failed: ${err}`;
+	    }
+	  } catch (error) {
+	    status.textContent = `Network error: ${error}`;
+	  }
+	}
+		
+	async function joinGame()	{
+		const userId = document.getElementById('userId').value.trim();
+		const gameId = document.getElementById('gameId').value.trim();
+		const symbol = document.getElementById('symbol').value.trim();
+		const status = document.getElementById('joinStatus');
+
+		try {
+			const response = await fetch('/api/joinGame', {
+				method: 'POST',
+			    headers: {
+			        'Content-Type': 'application/json'
+			    },
+			    body: JSON.stringify({ userId, gameId, symbol })
+			});
+
+			if (response.ok) {
+				const joinInfo = await response.json();
+				status.textContent = 'User ' + userId + ' joined the game ' + gameId + ' symbol: ' + symbol;
+
+				/* connect */			  
+				ws = new WebSocket('ws://' + location.host + '/api/events');
+				ws.addEventListener('message', (evt) => {
+				  	handleServerEvent(JSON.parse(evt.data));
+				});
+				const events = document.getElementById('events');
+				events.value = '';
+
+			} else {
+				const err = await response.text();
+			    status.textContent = `Join failed: ${err}`;
+			}
+		} catch (error) {
+		    status.textContent = `Network error: ${error}`;
+		}
+	}
+		
+	async function playGame()	{
+	  	const userId = document.getElementById('userId').value.trim();
+	  	const gameId = document.getElementById('gameId').value.trim();
+	  	const symbol = document.getElementById('symbol').value.trim();
+	  	const status = document.getElementById('moveStatus');
+	  	const x = document.getElementById('x').value;
+	  	const y = document.getElementById('y').value;
+		      
+	  	try {
+	  	  const response = await fetch('/api/makeAMove', {
+		  	    method: 'POST',
+		  	    headers: {
+		  	      'Content-Type': 'application/json'
+		  	    },
+		  	    body: JSON.stringify({ userId, gameId, symbol, x, y })
+		  	  });
+	
+		  	  if (response.ok) {
+		  	  	const moveRes = await response.json();
+		  	  	status.textContent = 'Move accepted';
+		  	  } else {
+		  	    const err = await response.text();
+		  	    status.textContent = `Move not accepted: ${err}`;
+		  	  }
+		} catch (error) {
+		  	  status.textContent = `Network error: ${error}`;
+		}
+    }
+	
+	
+	function handleServerEvent(evt){
+		const events = document.getElementById('events');
+		try {
+			console.log(evt); 
+			if (evt.event == 'new-move'){
+				events.value += evt.symbol + ' in (' + evt.x + ',' + evt.y + ')\n';
+			} else if (evt.event == 'game-ended'){
+				events.value += 'Game ended - The winner is: ' + evt.winner;
+			}
+		} catch (e) {
+			log('WS message parse error: ' + e.message);
+		}
+	}	
+	
+  </script>
+</body>
+</html>
