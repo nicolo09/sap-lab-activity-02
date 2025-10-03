@@ -1,5 +1,6 @@
-package ttt_bbom;
+package ttt_backend;
 
+import java.util.HashMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -16,24 +17,30 @@ import java.io.*;
 
 /**
 *
-* TicTacToe Backend implemented as a BBoM
+* Event-loop based backend controller, based on Vert.x 
 * 
 * @author aricci
 *
 */
-public class TTTBackendVerticle extends VerticleBase {
+public class TTTBackendController extends VerticleBase {
 
 	private int port;
 	static Logger logger = Logger.getLogger("[TicTacToe Backend]");
 	static final String TTT_CHANNEL = "ttt-events";
+
+	/* db file */
 	static final String DB_USERS = "users.json";
 	
-	private ConcurrentHashMap<String, User> users;
-	private ConcurrentHashMap<String, Game> games;
+	/* list of registered users */
+	private HashMap<String, User> users;
+	
+	/* list on ongoing games*/ 
+	private HashMap<String, Game> games;
+
 	private int usersIdCount;
 	private int gamesIdCount;
 	
-	public TTTBackendVerticle(int port) {
+	public TTTBackendController(int port) {
 		this.port = port;
 		logger.setLevel(Level.INFO);
 	}
@@ -45,10 +52,10 @@ public class TTTBackendVerticle extends VerticleBase {
 		gamesIdCount = 0;
 		usersIdCount = 0;
 		
-		users = new ConcurrentHashMap<>();
-		games = new ConcurrentHashMap<>();
+		users = new HashMap<>();
+		games = new HashMap<>();
 		
-		/* routes for the API */
+		/* API routes */
 		
 		Router router = Router.router(vertx);
 		router.route(HttpMethod.POST, "/api/registerUser").handler(this::registerUser);
@@ -68,10 +75,13 @@ public class TTTBackendVerticle extends VerticleBase {
 		/* start the server */
 		
 		var fut = server
-					.requestHandler(router)
-					.listen(port);
+			.requestHandler(router)
+			.listen(port);
+		
+		fut.onSuccess(res -> {
+			logger.log(Level.INFO, "TTT Game Server ready - port: " + port);
+		});
 
-		logger.log(Level.INFO, "TTT Server - port: " + port);
 		return fut;
 	}
 
@@ -89,13 +99,15 @@ public class TTTBackendVerticle extends VerticleBase {
 		logger.log(Level.INFO, "RegisterUser request");
 		usersIdCount++;		
 		context.request().handler(buf -> {
+
+			/* add the new user */
 			JsonObject userInfo = buf.toJsonObject();
-			logger.log(Level.INFO, "Payload: " + userInfo);
 			var userName = userInfo.getString("userName");
 			var newUserId = "user-"+usersIdCount;
 			var user = new User(newUserId, userName);
 			users.put(newUserId, user);
 			
+			/* save on DB */
 			saveOnDB();
 			
 			var reply = new JsonObject();
@@ -139,13 +151,11 @@ public class TTTBackendVerticle extends VerticleBase {
 	protected void joinGame(RoutingContext context) {
 		logger.log(Level.INFO, "JoinGame request - " + context.currentRoute().getPath());
 		context.request().handler(buf -> {
-			JsonObject joinInfo = buf.toJsonObject();
-			logger.log(Level.INFO, "Join info: " + joinInfo);
-			
+			JsonObject joinInfo = buf.toJsonObject();			
 			String userId = joinInfo.getString("userId");
 			String gameId = joinInfo.getString("gameId");
 			String symbol = joinInfo.getString("symbol");
-			var gameSym = symbol.equals("cross") ? Game.GridSymbol.CROSS : Game.GridSymbol.CIRCLE;		
+			var gameSym = symbol.equals("cross") ? Game.GameSymbolType.CROSS : Game.GameSymbolType.CIRCLE;		
 			var user = users.get(userId);
 			var game = games.get(gameId);
 			
@@ -191,7 +201,7 @@ public class TTTBackendVerticle extends VerticleBase {
 				int x = Integer.parseInt(moveInfo.getString("x"));
 				int y = Integer.parseInt(moveInfo.getString("y"));
 		
-				var gameSym = symbol.equals("cross") ? Game.GridSymbol.CROSS : Game.GridSymbol.CIRCLE;		
+				var gameSym = symbol.equals("cross") ? Game.GameSymbolType.CROSS : Game.GameSymbolType.CIRCLE;		
 				var user = users.get(userId);
 				var game = games.get(gameId);				
 
@@ -207,29 +217,25 @@ public class TTTBackendVerticle extends VerticleBase {
 				
 				var evMove = new JsonObject();
 				evMove.put("event", "new-move");
-				evMove.put("userId", userId);
-				evMove.put("gameId", gameId);
 				evMove.put("x", x);
 				evMove.put("y", y);
-				evMove.put("symbol", symbol);
-				
-				eb.publish(TTT_CHANNEL, evMove);
+				evMove.put("symbol", symbol);				
+				eb.publish(TTT_CHANNEL+"-"+gameId, evMove);
 	
 				if (game.isGameEnd()) {
 					var evEnd = new JsonObject();
 					evEnd.put("event", "game-ended");
-					evEnd.put("gameId", gameId);				
 					if (game.isTie()) {
 						evEnd.put("result", "tie");					
 					} else {
 						var sym = game.getWinner().get();
-						if (sym.equals(Game.GridSymbol.CROSS)) {
+						if (sym.equals(Game.GameSymbolType.CROSS)) {
 							evEnd.put("winner", "cross");											
 						} else {
 							evEnd.put("winner", "circle");											
 						}
 					}				
-					eb.publish(TTT_CHANNEL, evEnd);
+					eb.publish(TTT_CHANNEL+"-"+gameId, evEnd);
 				}
 				
 			} catch (Exception ex) {
@@ -246,24 +252,24 @@ public class TTTBackendVerticle extends VerticleBase {
 
 	/* Handling subscribers using web sockets */
 	
+	/* Handling subscribers using web sockets */
+	
 	protected void handleEventSubscription(HttpServer server, String path) {
 		server.webSocketHandler(webSocket -> {
-			// if (webSocket.path().equals(path)) {
-			// 	webSocket.accept();
-				logger.log(Level.INFO, "New TTT subscription accepted.");
-				JsonObject reply = new JsonObject();
-				webSocket.writeTextMessage(reply.encodePrettily());
+			logger.log(Level.INFO, "New TTT subscription accepted.");
+			// JsonObject reply = new JsonObject();
+			// webSocket.writeTextMessage(reply.encodePrettily());
+			webSocket.textMessageHandler(openMsg -> {
+				logger.log(Level.INFO, "For game: " + openMsg);
+				JsonObject obj = new JsonObject(openMsg);
+				String gameId = obj.getString("gameId");
 				EventBus eb = vertx.eventBus();
-				eb.consumer(TTT_CHANNEL, msg -> {
+				eb.consumer(TTT_CHANNEL+"-"+gameId, msg -> {
 					JsonObject ev = (JsonObject) msg.body();
 					logger.log(Level.INFO, "Event: " + ev.encodePrettily());
 					webSocket.writeTextMessage(ev.encodePrettily());
 				});
-			/*	
-			} else {
-				logger.log(Level.INFO, "TTT subscription refused.");
-				webSocket.reject();
-			}*/
+			});
 		});
 	}
 	

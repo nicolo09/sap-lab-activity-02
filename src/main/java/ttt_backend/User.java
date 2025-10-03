@@ -1,8 +1,8 @@
-package ttt_bbom;
+package ttt_backend;
 
 /**
  * 
- * Data structure representing a user
+ * A user of the TTT Game Server
  * 
  */
 public record User(String id, String name) {}

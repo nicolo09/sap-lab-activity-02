@@ -34,7 +34,7 @@
 	<p id="joinStatus"></p>
   </fieldset>
   <br>
-  <fieldset>
+  <fieldset id="moveBox">
 	<label for="x">x:</label>
 	<input type="number" id="x" name="x" min="0" max="2" value="0" />
 	<label for="y">y:</label>
@@ -49,7 +49,7 @@
 
       
   <script>
-	
+	document.getElementById("moveBox").disabled = true;
 	document.getElementById('createB').addEventListener('click', createGame);
 	document.getElementById('registerB').addEventListener('click', registerUser);
 	document.getElementById('joinB').addEventListener('click', joinGame);
@@ -120,7 +120,9 @@
 				const joinInfo = await response.json();
 				status.textContent = 'User ' + userId + ' joined the game ' + gameId + ' symbol: ' + symbol;
 
-				/* connect */			  
+				document.getElementById("moveBox").disabled = false;
+
+								/* connect */			  
 				ws = new WebSocket('ws://' + location.host + '/api/events');
 				ws.addEventListener('message', (evt) => {
 				  	handleServerEvent(JSON.parse(evt.data));
