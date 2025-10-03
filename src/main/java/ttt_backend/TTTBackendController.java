@@ -315,7 +315,9 @@ public class TTTBackendController extends VerticleBase {
 			}
 			
 		} catch (Exception ex) {
-			ex.printStackTrace();
+			// ex.printStackTrace();
+			logger.info("No dbase, creating a new one");
+			saveOnDB();
 		}
 	}
 	
