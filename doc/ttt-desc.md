@@ -20,20 +20,20 @@ The system is composed of a backend and a frontend
       (to be run from the package root, where `pom.xml` is located)
   
   - Notes about the design and implementation: 
-    - `ttt_backend.TTTBackendController` is a big monolitic controller, a reactive event-loop based componend implemented as Vert.x verticle. The controller receives HTTP requests (port `8080`) and processes them. The requests can be: 
+    - `ttt_backend.TTTBackendController` is a big monolitic controller, a reactive event-loop based component implemented as Vert.x verticle. The controller receives HTTP requests (port `8080`) and processes them. The requests can be: 
       - **to register a new user** to the game server, given its user name. 
-        - It generates a unique user id. An hash map `users` is used to keep track of the set of registered users, represented by the class (`ttt_backend.User`. 
-        - A simple JSON dbase (`users.json` file) is used to persist the set of registered users. Each time a new user is registered, the dbase is updated. 
+        - It generates a unique user id. An hash map `users` is used to keep track of the set of registered users (class (`ttt_backend.User`). 
+        - A simple JSON dbase (`users.json` file) is used to persist the set of registered users.  
       - **to create a new game**. Each game has its own game id and it is represented by the class `ttt_backend.Game`. An hash map `games` is used to keep track of the ongoing games.
-        - a game has a state: it starts from `WAITING_FOR_PLAYERS` meaning that we are waiting for another player to join, then changing to `PLAYING` when two players joined, up to `FINISHED` when the game is ended.
+        - a game has a state: it starts from `WAITING_FOR_PLAYER` meaning that we are waiting for another player to join, `PLAYING` when another player  joined and the two players can play, `FINISHED` when the game is ended.
       - **to join an existing game**, given a game id, a user id and the symbol to be used (cross or circle)
-        - when a frontend joins a game, a websocket is created to notify game events
+        - when a user joins a game, a websocket is created to notify game events
       - **to make a move in a game**, specifying who wants to move (circle or cross) and where to move (x and y coordinates of the game grid, from 0 to 2)
-        - each time a new move is made, an game event is generated and notified to the frontends of the two players, through their websockets   
+        - each time a new move is made, a game event is generated and notified to users' frontends, through their websockets   
   
   
 - **Frontend** 
-  - Written as single raw HTML5 page, providing a raw interface to register a new user, to create a new game, to join and play in a game.
+  - A simple raw HTML5 page, providing a basic interface to register a new user, to create a new game, to join and play in a game.
     - To run it, open a browser at `http://localhost:8080/public/ttt.html`
   - Notes about the design and implementation: 
     - the page is `ttt.html`, located in `webroot` folder.  
