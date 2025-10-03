@@ -8,7 +8,7 @@ It is a toy client-server system implementing some raw functionalities of a Tic-
  - The system allows for creating and playing multiple independent games. In order to play in games, users must first register to the server.
  - Once registered, they can join and play any ongoing game. 
 
-The system composed by a backend and a frontend
+The system is composed of a backend and a frontend
 
 - **Backend**
   - Written in Java, using Vert.x event-loop-based framework. It exposes an HTTP endpoint providing an API to register users, create new games,  join and play a game
