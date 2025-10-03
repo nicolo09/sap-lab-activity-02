@@ -35,8 +35,7 @@ public class Game {
 	
 	/* the winner (if present) of this game */
 	private Optional<Player> winner;
-	
-	
+		
 	/**
 	 * 
 	 * A game has its own id

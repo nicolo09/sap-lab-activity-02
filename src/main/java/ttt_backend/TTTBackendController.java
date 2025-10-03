@@ -212,16 +212,26 @@ public class TTTBackendController extends VerticleBase {
 				} catch (Exception ex) {
 					sendError(context.response());
 				}	
+
+				/* notifying events */
 				
 				var eb = vertx.eventBus();
+				
+				/* about the new move */
 				
 				var evMove = new JsonObject();
 				evMove.put("event", "new-move");
 				evMove.put("x", x);
 				evMove.put("y", y);
-				evMove.put("symbol", symbol);				
-				eb.publish(TTT_CHANNEL+"-"+gameId, evMove);
+				evMove.put("symbol", symbol);		
+				
+				/* the event is notified on the 'address' of specific game */
+				
+				var gameAddress = TTT_CHANNEL+"-"+gameId;
+				eb.publish(gameAddress, evMove);
 	
+				/* if the game ended, we need to notify an event */
+
 				if (game.isGameEnd()) {
 					var evEnd = new JsonObject();
 					evEnd.put("event", "game-ended");
@@ -250,23 +260,36 @@ public class TTTBackendController extends VerticleBase {
 	}
 
 
-	/* Handling subscribers using web sockets */
-	
-	/* Handling subscribers using web sockets */
-	
+	/* 
+	 * Handling frontend subscription to receive events for a specific game,
+	 * using websockets
+	 * 
+	 */
 	protected void handleEventSubscription(HttpServer server, String path) {
 		server.webSocketHandler(webSocket -> {
 			logger.log(Level.INFO, "New TTT subscription accepted.");
-			// JsonObject reply = new JsonObject();
-			// webSocket.writeTextMessage(reply.encodePrettily());
+
+			/* 
+			 * receiving a first message including the id of the game
+			 * to observe 
+			 */
 			webSocket.textMessageHandler(openMsg -> {
 				logger.log(Level.INFO, "For game: " + openMsg);
 				JsonObject obj = new JsonObject(openMsg);
 				String gameId = obj.getString("gameId");
+				
+				/* 
+				 * subscribing events on the event bus to receive
+				 * events concerning the game, to be notified 
+				 * then to the frontend, using the websocket
+				 */
 				EventBus eb = vertx.eventBus();
-				eb.consumer(TTT_CHANNEL+"-"+gameId, msg -> {
+				
+				var gameAddress = TTT_CHANNEL+"-"+gameId;
+				
+				eb.consumer(gameAddress, msg -> {
 					JsonObject ev = (JsonObject) msg.body();
-					logger.log(Level.INFO, "Event: " + ev.encodePrettily());
+					logger.log(Level.INFO, "Notifying event to the frontend: " + ev.encodePrettily());
 					webSocket.writeTextMessage(ev.encodePrettily());
 				});
 			});
