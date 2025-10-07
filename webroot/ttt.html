@@ -23,7 +23,7 @@
   </fieldset>
   <br>
   <fieldset>
-  	<legend>Playing Game</legend>
+  	<legend>Joining a Game</legend>
 	<label for="userId">User id:</label>
 	<input type="text" id="userId" name="userId" value="user-1" required />
 	<label for="gameId">Game id:</label>
@@ -34,14 +34,17 @@
 	<p id="joinStatus"></p>
   </fieldset>
   <br>
-  <fieldset id="moveBox">
+  <fieldset id="playBox">
+	<legend>Playing the Game</legend>
+	<p id="playStatus"></p>
 	<label for="x">x:</label>
 	<input type="number" id="x" name="x" min="0" max="2" value="0" />
 	<label for="y">y:</label>
 	<input type="number" id="y" name="y" min="0" max="2" value="0" />
 	<button id="moveB">Move</button>
-	<p id="moveStatus"></p>
-	<label for="events">Game state</label>
+	<br>
+	<br>
+	<label for="events">Game events</label>
 	<br>
 	<textarea id="events" name="events" rows="10" cols="80">
 	</textarea>
@@ -49,7 +52,7 @@
 
       
   <script>
-	document.getElementById("moveBox").disabled = true;
+	document.getElementById("playBox").disabled = true;
 	document.getElementById('createB').addEventListener('click', createGame);
 	document.getElementById('registerB').addEventListener('click', registerUser);
 	document.getElementById('joinB').addEventListener('click', joinGame);
@@ -118,18 +121,34 @@
 
 			if (response.ok) {
 				const joinInfo = await response.json();
-				status.textContent = 'User ' + userId + ' joined the game ' + gameId + ' symbol: ' + symbol;
+				
+				if (joinInfo.result == 'accepted'){
+					status.textContent = 'User ' + userId + ' joining the game ' + gameId + ' with symbol: ' + symbol;
 
-				document.getElementById("moveBox").disabled = false;
+					/* to complete the joining stage, a websocket to receive the game events must be created */
+							  
+					ws = new WebSocket('ws://' + location.host + '/api/events');
 
-								/* connect */			  
-				ws = new WebSocket('ws://' + location.host + '/api/events');
-				ws.addEventListener('message', (evt) => {
-				  	handleServerEvent(JSON.parse(evt.data));
-				});
-				const events = document.getElementById('events');
-				events.value = '';
+					/* when the connection is established, send a first message with the gameId */
+					ws.addEventListener('open', () => {
+						ws.send('{ "gameId": "' + gameId + '" }');
+						status.textContent = 'Game joined';
 
+						const playStatus = document.getElementById('playStatus');
+						playStatus.textContent = 'Waiting another player to join...';
+					});
+
+					const events = document.getElementById('events');
+					events.value = '';
+					
+					/* receive all events for this game and process them */				
+					ws.addEventListener('message', (evt) => {
+				  		handleServerEvent(JSON.parse(evt.data));
+					});
+				
+				} else {
+					status.textContent = `Join denied.`;
+				}
 			} else {
 				const err = await response.text();
 			    status.textContent = `Join failed: ${err}`;
@@ -143,40 +162,83 @@
 	  	const userId = document.getElementById('userId').value.trim();
 	  	const gameId = document.getElementById('gameId').value.trim();
 	  	const symbol = document.getElementById('symbol').value.trim();
-	  	const status = document.getElementById('moveStatus');
+	  	const status = document.getElementById('playStatus');
 	  	const x = document.getElementById('x').value;
 	  	const y = document.getElementById('y').value;
 		      
 	  	try {
-	  	  const response = await fetch('/api/makeAMove', {
-		  	    method: 'POST',
-		  	    headers: {
-		  	      'Content-Type': 'application/json'
-		  	    },
-		  	    body: JSON.stringify({ userId, gameId, symbol, x, y })
-		  	  });
-	
-		  	  if (response.ok) {
-		  	  	const moveRes = await response.json();
-		  	  	status.textContent = 'Move accepted';
-		  	  } else {
-		  	    const err = await response.text();
-		  	    status.textContent = `Move not accepted: ${err}`;
-		  	  }
+			const response = await fetch('/api/makeAMove', {
+				method: 'POST',
+			  	headers: {
+			  		'Content-Type': 'application/json'
+			  	},
+			  	body: JSON.stringify({ userId, gameId, symbol, x, y })
+			});
+
+			if (response.ok) {
+				const moveRes = await response.json();
+			  	if (moveRes.result == 'accepted'){
+					status.textContent = 'Move accepted';
+				} else {
+					status.textContent = 'Invalid move';
+				}
+			 } else {
+			 	const err = await response.text();
+				status.textContent = `Network error: ${err}`;
+			 }
 		} catch (error) {
 		  	  status.textContent = `Network error: ${error}`;
 		}
     }
 	
-	
+	/*
+	 *
+	 * Handling game events notified by the back end.
+	 *
+	 */
 	function handleServerEvent(evt){
 		const events = document.getElementById('events');
+		const status = document.getElementById('playStatus');
+		const symbol = document.getElementById('symbol').value.trim();
+		const opponentSymbol = symbol == 'cross' ? 'circle' : 'cross';
+
 		try {
 			console.log(evt); 
-			if (evt.event == 'new-move'){
+			if (evt.event == 'game-started'){
+				
+				/* players can play now */
+				
+				document.getElementById("playBox").disabled = false;				
+				if (symbol == 'cross'){
+					status.textContent = "Let's play! It's your turn";
+					document.getElementById("moveB").disabled = false;
+				} else {
+					status.textContent = "Let's play! It's your opponent turn.";
+					document.getElementById("moveB").disabled = true;
+				}									
+			} else if (evt.event == 'new-move'){
+				
+				/* new move */
+				
 				events.value += evt.symbol + ' in (' + evt.x + ',' + evt.y + ')\n';
+				if (evt.symbol == symbol){
+					status.textContent = "It's your opponent turn.";						
+					document.getElementById("moveB").disabled = true;
+				} else {
+					status.textContent = "it's your turn.";	
+				document.getElementById("moveB").disabled = false;
+				}
 			} else if (evt.event == 'game-ended'){
-				events.value += 'Game ended - The winner is: ' + evt.winner;
+				
+				/* end of the game */
+				 
+				if (evt.winner == symbol){
+					events.value += 'Game ended - You won.';
+				} else if (evt.winner == opponentSymbol) {
+					events.value += 'Game ended - You lose.';
+				} else {
+					events.value += 'Game ended - Tie.';
+				}
 			}
 		} catch (e) {
 			log('WS message parse error: ' + e.message);

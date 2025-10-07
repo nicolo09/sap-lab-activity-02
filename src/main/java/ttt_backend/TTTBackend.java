@@ -1,11 +1,11 @@
 package ttt_backend;
 
 import java.util.HashMap;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import io.vertx.core.Future;
 import io.vertx.core.VerticleBase;
+import io.vertx.core.Vertx;
 import io.vertx.core.eventbus.EventBus;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.HttpServer;
@@ -17,30 +17,37 @@ import java.io.*;
 
 /**
 *
-* Event-loop based backend controller, based on Vert.x 
+* Big raw monolithic back end with no clean (software) architecture
+* 
+* It features a reactive/event-loop control architecture, based on Vert.x 
 * 
 * @author aricci
 *
 */
-public class TTTBackendController extends VerticleBase {
+public class TTTBackend extends VerticleBase {
 
-	private int port;
 	static Logger logger = Logger.getLogger("[TicTacToe Backend]");
-	static final String TTT_CHANNEL = "ttt-events";
-
-	/* db file */
-	static final String DB_USERS = "users.json";
 	
+	//static final String TTT_CHANNEL = "ttt-events";
+
 	/* list of registered users */
 	private HashMap<String, User> users;
 	
 	/* list on ongoing games*/ 
 	private HashMap<String, Game> games;
 
+	/* counters to create ids */
 	private int usersIdCount;
 	private int gamesIdCount;
+
+	/* db file */
+	static final String DB_USERS = "users.json";
 	
-	public TTTBackendController(int port) {
+	/* port of the endpoint */
+	private int port;
+	
+	
+	public TTTBackend(int port) {
 		this.port = port;
 		logger.setLevel(Level.INFO);
 	}
@@ -55,16 +62,19 @@ public class TTTBackendController extends VerticleBase {
 		users = new HashMap<>();
 		games = new HashMap<>();
 		
-		/* API routes */
+		/* configuring API routes */
 		
 		Router router = Router.router(vertx);
 		router.route(HttpMethod.POST, "/api/registerUser").handler(this::registerUser);
 		router.route(HttpMethod.POST, "/api/createGame").handler(this::createNewGame);
 		router.route(HttpMethod.POST, "/api/joinGame").handler(this::joinGame);
 		router.route(HttpMethod.POST, "/api/makeAMove").handler(this::makeAMove);
-		this.handleEventSubscription(server, "/api/events");
+		
+		/* configuring websocket handler */
+		
+		handleEventSubscription(server, "/api/events");
 
-		/* static files */
+		/* enabling access to static files (web app page) */
 		
 		router.route("/public/*").handler(StaticHandler.create());
 
@@ -84,7 +94,6 @@ public class TTTBackendController extends VerticleBase {
 
 		return fut;
 	}
-
 	
 
 	/* List of handlers mapping the API */
@@ -169,6 +178,7 @@ public class TTTBackendController extends VerticleBase {
 				} catch (Exception ex) {
 					sendError(context.response());
 				}	
+								
 			} catch (Exception ex) {
 				reply.put("result", "denied");
 				try {
@@ -225,16 +235,18 @@ public class TTTBackendController extends VerticleBase {
 				evMove.put("y", y);
 				evMove.put("symbol", symbol);		
 				
-				/* the event is notified on the 'address' of specific game */
+				/* the event is notified on the event bus 'address' of the specific game */
 				
-				var gameAddress = TTT_CHANNEL+"-"+gameId;
+				var gameAddress = getBusAddressForAGame(gameId);
 				eb.publish(gameAddress, evMove);
 	
-				/* if the game ended, we need to notify an event */
+				/* a game-ended event is notified too if the game is ended */
 
 				if (game.isGameEnd()) {
+
 					var evEnd = new JsonObject();
 					evEnd.put("event", "game-ended");
+					
 					if (game.isTie()) {
 						evEnd.put("result", "tie");					
 					} else {
@@ -245,7 +257,7 @@ public class TTTBackendController extends VerticleBase {
 							evEnd.put("winner", "circle");											
 						}
 					}				
-					eb.publish(TTT_CHANNEL+"-"+gameId, evEnd);
+					eb.publish(gameAddress, evEnd);
 				}
 				
 			} catch (Exception ex) {
@@ -261,8 +273,9 @@ public class TTTBackendController extends VerticleBase {
 
 
 	/* 
-	 * Handling frontend subscription to receive events for a specific game,
-	 * using websockets
+	 * 
+	 * Handling frontend subscriptions to receive events 
+	 * when joining a game, using websockets
 	 * 
 	 */
 	protected void handleEventSubscription(HttpServer server, String path) {
@@ -270,28 +283,51 @@ public class TTTBackendController extends VerticleBase {
 			logger.log(Level.INFO, "New TTT subscription accepted.");
 
 			/* 
-			 * receiving a first message including the id of the game
+			 * 
+			 * Receiving a first message including the id of the game
 			 * to observe 
+			 * 
 			 */
 			webSocket.textMessageHandler(openMsg -> {
 				logger.log(Level.INFO, "For game: " + openMsg);
 				JsonObject obj = new JsonObject(openMsg);
 				String gameId = obj.getString("gameId");
-				
+								
 				/* 
-				 * subscribing events on the event bus to receive
+				 * Subscribing events on the event bus to receive
 				 * events concerning the game, to be notified 
-				 * then to the frontend, using the websocket
+				 * to the frontend using the websocket
+				 * 
 				 */
 				EventBus eb = vertx.eventBus();
 				
-				var gameAddress = TTT_CHANNEL+"-"+gameId;
-				
+				var gameAddress = getBusAddressForAGame(gameId);				
 				eb.consumer(gameAddress, msg -> {
 					JsonObject ev = (JsonObject) msg.body();
 					logger.log(Level.INFO, "Notifying event to the frontend: " + ev.encodePrettily());
 					webSocket.writeTextMessage(ev.encodePrettily());
 				});
+				
+				/*
+				 * 
+				 * When both players joined the game and both
+				 * have the websocket connection ready, 
+				 * the game can start 
+				 * 
+				 */
+				var game = games.get(gameId);
+				if (game.bothPlayersJoined()) {
+					try {
+						game.start();					
+						var evGameStarted = new JsonObject();
+						evGameStarted.put("event", "game-started");
+						eb.publish(gameAddress, evGameStarted);
+					} catch (Exception ex) {
+						ex.printStackTrace();
+					}
+				}
+				
+				
 			});
 		});
 	}
@@ -338,16 +374,22 @@ public class TTTBackendController extends VerticleBase {
 			ex.printStackTrace();
 		}	
 	}
-			
-	/* Aux methods */
-	
-	private void sendReply(HttpServerResponse response, JsonObject reply) {
-		response.putHeader("content-type", "application/json");
-		response.end(reply.toString());
+
+	/**
+	 * 
+	 * Get the address on the Vert.x event bus 
+	 * to handle events related to a specific game
+	 *  
+	 * @param gameId
+	 * @return
+	 */
+	private String getBusAddressForAGame(String gameId) {
+		return "ttt-events-" + gameId;
 	}
-	
-	private void sendBadRequest(HttpServerResponse response, JsonObject reply) {
-		response.setStatusCode(400);
+
+	/* Aux methods */
+		
+	private void sendReply(HttpServerResponse response, JsonObject reply) {
 		response.putHeader("content-type", "application/json");
 		response.end(reply.toString());
 	}
@@ -358,4 +400,18 @@ public class TTTBackendController extends VerticleBase {
 		response.end();
 	}
 
+	static final int BACKEND_PORT = 8080;
+
+	/**
+	 * 
+	 * Main method to launch the backend.
+	 * 
+	 * @param args
+	 */
+	public static void main(String[] args) {
+		var vertx = Vertx.vertx();
+		var server = new TTTBackend(BACKEND_PORT);
+		vertx.deployVerticle(server);	
+	}	
+	
 }

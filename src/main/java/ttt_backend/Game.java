@@ -18,7 +18,6 @@ public class Game {
 	/* the two players */
 	private HashMap<GameSymbolType, Player> players;
 
-
 	public enum GameSymbolType { CROSS, CIRCLE, EMPTY};
 
 	/* grid */
@@ -50,8 +49,6 @@ public class Game {
 				grid[y][x] = GameSymbolType.EMPTY;
 			}
 		}
-		numFreeCellsLeft = 9;
-		currentTurn = GameSymbolType.CROSS;
 		players = new HashMap<>();
 		state = GameState.WAITING_PLAYER;
 		winner = Optional.empty();
@@ -60,7 +57,7 @@ public class Game {
 	public String getId() {
 		return id;
 	}
-	
+		
 	/**
 	 * Join the game, using the specified symbol
 	 * 
@@ -73,8 +70,21 @@ public class Game {
 			throw new InvalidJoinException();
 		}	
 		players.put(symbol, new Player(user, symbol));
+	}
+
+	/**
+	 * 
+	 * Start the game
+	 * 
+	 * @throws CannotStartGameException
+	 */
+	public void start() throws CannotStartGameException {
 		if (players.size() == 2) {
 			state = GameState.PLAYING;
+			numFreeCellsLeft = 9;
+			currentTurn = GameSymbolType.CROSS;
+		} else {
+			throw new CannotStartGameException();
 		}
 	}
 	
@@ -88,12 +98,13 @@ public class Game {
 	 * @throws InvalidMoveException
 	 */
 	public void makeAmove(User player, GameSymbolType symbol, int x, int y) throws InvalidMoveException {
-		if (symbol.equals(currentTurn)) {
+		if (state.equals(GameState.PLAYING) && symbol.equals(currentTurn)) {
 			var p = players.get(symbol);
 			if (p.user().equals(player)) {
 				if (grid[y][x].equals(GameSymbolType.EMPTY)) {
 					grid[y][x] = symbol;
 					currentTurn = adversarial(symbol);
+					checkState();			
 				} else {
 					throw new InvalidMoveException();
 				}
@@ -103,7 +114,6 @@ public class Game {
 		} else {
 			throw new InvalidMoveException();			
 		}
-		checkState();			
 	}
 
 	/**
@@ -139,6 +149,17 @@ public class Game {
 	public boolean isTie() {
 		return isGameEnd() && winner.isEmpty();
 	}
+	
+	/**
+	 * 
+	 * Check if both players joined the game
+	 * 
+	 * @return
+	 */
+	public boolean bothPlayersJoined() {
+		return players.size() == 2;
+	}
+
 	
 	private void checkState() {
 		for (int y = 0; y < 3; y++) {

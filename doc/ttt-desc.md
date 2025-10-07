@@ -15,12 +15,12 @@ The system is composed of a backend and a frontend
 
     - To run it from the command line:
 
-      `mvn compile exec:java -Dexec.mainClass="ttt_backend.TTTBackendMain"`   
+      `mvn compile exec:java -Dexec.mainClass="ttt_backend.TTTBackend"`   
 
       (to be run from the package root, where `pom.xml` is located)
   
   - Notes about the design and implementation: 
-    - `ttt_backend.TTTBackendController` is a big monolitic controller, a reactive event-loop based component implemented as Vert.x verticle. The controller receives HTTP requests (port `8080`) and processes them. The requests can be: 
+    - `ttt_backend.TTTBackend` is a big monolitic backend implemented using Vert.x + Web reactive framework. The backend receives HTTP requests (port `8080`) and processes them. The requests can be: 
       - **to register a new user** to the game server, given its user name. 
         - It generates a unique user id. An hash map `users` is used to keep track of the set of registered users (class (`ttt_backend.User`). 
         - A simple JSON dbase (`users.json` file) is used to persist the set of registered users.  
