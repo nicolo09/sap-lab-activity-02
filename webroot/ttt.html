@@ -109,6 +109,8 @@
 		const gameId = document.getElementById('gameId').value.trim();
 		const symbol = document.getElementById('symbol').value.trim();
 		const status = document.getElementById('joinStatus');
+		const playStatus = document.getElementById('playStatus');
+		const events = document.getElementById('events');
 
 		try {
 			const response = await fetch('/api/joinGame', {
@@ -134,11 +136,9 @@
 						ws.send('{ "gameId": "' + gameId + '" }');
 						status.textContent = 'Game joined';
 
-						const playStatus = document.getElementById('playStatus');
 						playStatus.textContent = 'Waiting another player to join...';
 					});
 
-					const events = document.getElementById('events');
 					events.value = '';
 					
 					/* receive all events for this game and process them */				
@@ -201,20 +201,22 @@
 		const status = document.getElementById('playStatus');
 		const symbol = document.getElementById('symbol').value.trim();
 		const opponentSymbol = symbol == 'cross' ? 'circle' : 'cross';
-
+		const moveButton = document.getElementById("moveB");
+		const playBox = document.getElementById("playBox");
+		
 		try {
 			console.log(evt); 
 			if (evt.event == 'game-started'){
 				
 				/* players can play now */
 				
-				document.getElementById("playBox").disabled = false;				
+				playBox.disabled = false;				
 				if (symbol == 'cross'){
 					status.textContent = "Let's play! It's your turn";
-					document.getElementById("moveB").disabled = false;
+					moveButton.disabled = false;
 				} else {
 					status.textContent = "Let's play! It's your opponent turn.";
-					document.getElementById("moveB").disabled = true;
+					moveButton.disabled = true;
 				}									
 			} else if (evt.event == 'new-move'){
 				
@@ -223,14 +225,15 @@
 				events.value += evt.symbol + ' in (' + evt.x + ',' + evt.y + ')\n';
 				if (evt.symbol == symbol){
 					status.textContent = "It's your opponent turn.";						
-					document.getElementById("moveB").disabled = true;
+					moveButton.disabled = true;
 				} else {
 					status.textContent = "it's your turn.";	
-				document.getElementById("moveB").disabled = false;
+					moveButton.disabled = false;
 				}
 			} else if (evt.event == 'game-ended'){
 				
 				/* end of the game */
+				moveButton.disabled = true;
 				 
 				if (evt.winner == symbol){
 					events.value += 'Game ended - You won.';
