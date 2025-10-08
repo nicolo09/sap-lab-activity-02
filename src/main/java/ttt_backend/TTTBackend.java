@@ -42,17 +42,23 @@ public class TTTBackend extends VerticleBase {
 	/* port of the endpoint */
 	private int port;
 
-	public TTTBackend(int port, UserRepoInterface userRepo) {
+	/* the HTTP server */
+	private final HttpServer server;
+
+	public TTTBackend(int port, UserRepoInterface userRepo, HttpServer server) {
 		this.port = port;
 		this.userRepo = userRepo;
+		this.server = server;
 		logger.setLevel(Level.INFO);
 	}
 
 	public Future<?> start() {
 		logger.log(Level.INFO, "TTT Server initializing...");
-		HttpServer server = vertx.createHttpServer();
+		
 
 		gamesIdCount = 0;
+
+		games = new HashMap<>();
 
 		/* configuring API routes */
 
@@ -61,10 +67,6 @@ public class TTTBackend extends VerticleBase {
 		router.route(HttpMethod.POST, "/api/createGame").handler(this::createNewGame);
 		router.route(HttpMethod.POST, "/api/joinGame").handler(this::joinGame);
 		router.route(HttpMethod.POST, "/api/makeAMove").handler(this::makeAMove);
-
-		/* configuring websocket handler */
-
-		handleEventSubscription(server, "/api/events");
 
 		/* enabling access to static files (web app page) */
 
@@ -253,63 +255,27 @@ public class TTTBackend extends VerticleBase {
 		});
 	}
 
-	/*
-	 * 
-	 * Handling frontend subscriptions to receive events
-	 * when joining a game, using websockets
-	 * 
-	 */
-	protected void handleEventSubscription(HttpServer server, String path) {
-		server.webSocketHandler(webSocket -> {
-			logger.log(Level.INFO, "New TTT subscription accepted.");
+	public void subscribeToGameEvents(String gameId, EventListenerInterface listener) {
+		EventBus eb = vertx.eventBus();
 
-			/*
-			 * 
-			 * Receiving a first message including the id of the game
-			 * to observe
-			 * 
-			 */
-			webSocket.textMessageHandler(openMsg -> {
-				logger.log(Level.INFO, "For game: " + openMsg);
-				JsonObject obj = new JsonObject(openMsg);
-				String gameId = obj.getString("gameId");
-
-				/*
-				 * Subscribing events on the event bus to receive
-				 * events concerning the game, to be notified
-				 * to the frontend using the websocket
-				 * 
-				 */
-				EventBus eb = vertx.eventBus();
-
-				var gameAddress = getBusAddressForAGame(gameId);
-				eb.consumer(gameAddress, msg -> {
-					JsonObject ev = (JsonObject) msg.body();
-					logger.log(Level.INFO, "Notifying event to the frontend: " + ev.encodePrettily());
-					webSocket.writeTextMessage(ev.encodePrettily());
-				});
-
-				/*
-				 * 
-				 * When both players joined the game and both
-				 * have the websocket connection ready,
-				 * the game can start
-				 * 
-				 */
-				var game = games.get(gameId);
-				if (game.bothPlayersJoined()) {
-					try {
-						game.start();
-						var evGameStarted = new JsonObject();
-						evGameStarted.put("event", "game-started");
-						eb.publish(gameAddress, evGameStarted);
-					} catch (Exception ex) {
-						ex.printStackTrace();
-					}
-				}
-
-			});
+		var gameAddress = getBusAddressForAGame(gameId);
+		eb.consumer(gameAddress, msg -> {
+			JsonObject ev = (JsonObject) msg.body();
+			logger.log(Level.INFO, "Notifying event to the frontend: " + ev.encodePrettily());
+			listener.onEvent(ev.encodePrettily());
 		});
+
+		var game = games.get(gameId);
+		if (game.bothPlayersJoined()) {
+			try {
+				game.start();
+				var evGameStarted = new JsonObject();
+				evGameStarted.put("event", "game-started");
+				eb.publish(gameAddress, evGameStarted);
+			} catch (Exception ex) {
+				ex.printStackTrace();
+			}
+		}
 	}
 
 	/**
@@ -347,8 +313,9 @@ public class TTTBackend extends VerticleBase {
 	 */
 	public static void main(String[] args) {
 		var vertx = Vertx.vertx();
-		var server = new TTTBackend(BACKEND_PORT, new JsonDAO());
-		vertx.deployVerticle(server);
+		var server = vertx.createHttpServer();
+		var backend = new TTTBackend(BACKEND_PORT, new JsonDAO(), server);
+		var webSocketAcceptor = new WebSocketAcceptor(server, backend);
+		vertx.deployVerticle(backend);
 	}
-
 }
