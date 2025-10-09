@@ -3,7 +3,6 @@ package ttt_backend;
 import java.util.HashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import io.vertx.core.VerticleBase;
 import io.vertx.core.Vertx;
 import io.vertx.core.eventbus.EventBus;
 import io.vertx.core.json.*;
